@@ -214,6 +214,14 @@ AUTOMATIC MAPPER by Fiendish
 ></alias>
 
 <alias
+   match="mapper entry *"
+   enabled="y"
+   sequence="100"
+   script="map_entry"
+   regexp="n"
+></alias>
+
+<alias
    match="^mapper shops?( .+)?$"
    regexp="y"
    enabled="y"
@@ -946,6 +954,14 @@ function fixbool (b)
    end -- if
 end -- fixbool
 
+function fixsearch (term)
+	if string.sub(term, 1, 1) == "\"" and string.sub(term, -1) == "\"" then
+		return string.sub(term, 2, -2)
+	else
+		return "%" .. term .. "%"
+	end
+end -- fixsearch
+
 function findpathfast(name, line, wildcards)
    local src = wildcards[1]
    local dest = wildcards[2]
@@ -1114,10 +1130,7 @@ function map_list (name, line, wildcards)
    local count = 0
    Note("+------------------------------ START OF SEARCH -------------------------------+")
    -- find matching rooms using FTS3
-   local name = "%"..wildcards[1].."%"
-   if string.sub(wildcards[1],1,1) == "\"" and string.sub(wildcards[1],-1) == "\"" then
-      name = string.sub(wildcards[1],2,-2)
-   end
+   local name = fixsearch(wildcards[1])
 
    -- faster than "SELECT uid, name, area FROM rooms WHERE name LIKE %s ORDER BY area LIMIT 101"
    for row in dbnrowsWRAPPER(string.format ("SELECT rooms_lookup.uid as uid, rooms_lookup.name as name, area FROM (select uid, name FROM rooms_lookup WHERE name LIKE %s) AS rooms_lookup JOIN rooms ON rooms_lookup.uid = rooms.uid ORDER BY area LIMIT 101;", fixsql (name))) do
@@ -3815,10 +3828,7 @@ function map_area (name, line, wildcards)
    local count = 0
 
    local key = Trim(wildcards[1])
-   local name = "%"..key.."%"
-   if string.sub(key,1,1) == "\"" and string.sub(key,-1) == "\"" then
-      name = Trim(string.sub(key,2,-2))
-   end
+   local name = fixsearch(key)
    for row in dbnrowsWRAPPER(string.format ("SELECT uid, name, area FROM rooms WHERE trim(name) LIKE %s and area = %s", fixsql(name), fixsql(area))) do
       table.insert(rooms,{uid=row.uid, reason=true})
       count = count + 1
@@ -3845,11 +3855,7 @@ function map_find (name, line, wildcards)
    local count = 0
 
    -- find matching rooms using FTS3
-   local name = "%"..wildcards[1].."%"
-
-   if string.sub(wildcards[1],1,1) == "\"" and string.sub(wildcards[1],-1) == "\"" then
-      name = string.sub(wildcards[1],2,-2)
-   end
+   local name = fixsearch(wildcards[1])
    for row in dbnrowsWRAPPER(string.format ("SELECT uid, name FROM rooms_lookup WHERE rooms_lookup.name LIKE %s", fixsql (name))) do
       table.insert(rooms, {uid=row.uid, reason=true})
       count = count + 1
@@ -3927,6 +3933,39 @@ function map_find_special(which_ones, which_area)
       true         -- quick list
    )
 end -- map_find_special
+
+function map_entry (name, line, wildcards)
+   local query
+   local rooms = {}
+   local count = 0
+
+   -- Find the area uids for the search term
+   local search_area = fixsearch (wildcards[1])
+   local areas = {}
+   query = string.format ("SELECT uid FROM areas WHERE name LIKE %s OR uid LIKE %s", fixsql(search_area), fixsql(search_area))
+   for row in dbnrowsWRAPPER(query) do
+      table.insert(areas, fixsql(row.uid))
+   end
+   areas = "(" .. table.concat(areas, ", ") .. ")"
+
+   -- Find entry rooms into those areas
+   query = string.format ("SELECT DISTINCT tr.* FROM rooms tr JOIN exits e ON tr.uid = e.touid LEFT JOIN rooms fr ON e.fromuid = fr.uid WHERE tr.area IN %s AND (fr.area <> tr.area OR tr.area IS NULL)", areas)
+   for row in dbnrowsWRAPPER(query) do
+      table.insert(rooms, {uid=row.uid, reason=true})
+      count = count + 1
+   end   -- finding room
+
+   -- see if nearby
+   mapper.find ("entry into " .. search_area,
+      rooms,  -- function
+      50,
+      show_vnums,  -- show vnum?
+      count,      -- how many to expect
+      false,       -- don't auto-walk
+      nil,
+      quick_mode
+   )
+end -- map_entry
 
 function map_shops (name, line, wildcards)
    map_find_special ({ "shop", "bank", }, wildcards[1])
@@ -4528,6 +4567,7 @@ you set all portal aspects in one command without being in the target room.]],
 [[mapper find <text>             --> Full-text search the whole database]],
 [[mapper list <text>             --> Find rooms without the known-path limits
                                  > of "area" and "find"]],
+[[mapper entry <area>            --> Find entry rooms into the area]],
 [[]],
 [[mapper notes                   --> Show nearby rooms that you marked with notes]],
 [[mapper notes <here/area>       --> Ditto]],
