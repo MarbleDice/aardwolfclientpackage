@@ -955,11 +955,11 @@ function fixbool (b)
 end -- fixbool
 
 function fixsearch (term)
-	if string.sub(term, 1, 1) == "\"" and string.sub(term, -1) == "\"" then
-		return string.sub(term, 2, -2)
-	else
-		return "%" .. term .. "%"
-	end
+   if string.sub(term, 1, 1) == "\"" and string.sub(term, -1) == "\"" then
+      return string.sub(term, 2, -2)
+   else
+      return "%" .. term .. "%"
+   end
 end -- fixsearch
 
 function findpathfast(name, line, wildcards)
